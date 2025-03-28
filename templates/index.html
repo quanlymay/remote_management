@@ -1,36 +1,26 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quản lý Máy Khách</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
-    <script>
-        var socket = io.connect("http://127.0.0.1:5000");
-
-        socket.on("update", function(data) {
-            var list = document.getElementById("machine-list");
-            list.innerHTML = "";
-            for (var group in data) {
-                for (var machine in data[group]) {
-                    var li = document.createElement("li");
-                    li.textContent = `${machine} (${group}) - Trạng thái: ${data[group][machine].status}`;
-                    list.appendChild(li);
-                }
-            }
-        });
-
-        function sendCommand(machine, action) {
-            fetch("/control", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ machine: machine, action: action })
-            });
-        }
-    </script>
+  <meta charset="UTF-8">
+  <title>Remote Management</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
-    <h1>Danh sách Máy Khách</h1>
-    <ul id="machine-list"></ul>
+  <h2>Danh sách Máy Khách</h2>
+  <ul id="clientList"></ul>
+
+  <script>
+    var socket = io();
+
+    socket.on('update_clients', function (clients) {
+      var list = document.getElementById('clientList');
+      list.innerHTML = '';
+      for (var client in clients) {
+        var item = document.createElement('li');
+        item.innerHTML = client + ' - ' + clients[client].status + ' - Nhóm: ' + clients[client].group;
+        list.appendChild(item);
+      }
+    });
+  </script>
 </body>
 </html>
