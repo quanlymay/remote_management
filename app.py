@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_socketio import SocketIO, emit
+import eventlet
+
+eventlet.monkey_patch()
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, async_mode='eventlet')
 
 clients = {}
 
@@ -14,22 +17,25 @@ def index():
 def handle_client_connect(data):
     client_id = data.get('client_id')
     group = data.get('group')
-    if client_id:
-        clients[client_id] = {'status': 'online', 'group': group}
-        emit('update_clients', clients, broadcast=True)
+    clients[client_id] = {'status': 'online', 'group': group}
+    emit('update_clients', clients, broadcast=True)
 
 @socketio.on('client_disconnect')
 def handle_client_disconnect(data):
     client_id = data.get('client_id')
-    if client_id and client_id in clients:
-        clients.pop(client_id)
-        emit('update_clients', clients, broadcast=True)
+    if client_id in clients:
+        del clients[client_id]
+    emit('update_clients', clients, broadcast=True)
 
-@app.route('/shutdown', methods=['POST'])
-def shutdown():
-    client_id = request.json.get('client_id')
-    emit('shutdown', {'client_id': client_id}, broadcast=True)
-    return jsonify({'message': 'Shutdown signal sent'})
+@socketio.on('send_command')
+def handle_send_command(data):
+    client_id = data.get('client_id')
+    command = data.get('command')
+    emit('execute_command', {'command': command}, room=client_id)
+
+@socketio.on('register')
+def handle_register():
+    emit('register_ack', {'message': 'Registered successfully'})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=10000)
