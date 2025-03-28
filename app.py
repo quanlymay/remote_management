@@ -1,56 +1,35 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
-import os
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Danh sách máy khách
-machines = {}
+clients = {}
 
 @app.route('/')
 def index():
-    return render_template('index.html', machines=machines)
+    return render_template('index.html', clients=clients)
 
-@app.route('/register', methods=['POST'])
-def register():
-    data = request.json
-    machine_name = data.get("machine_name")
-    group_name = data.get("group_name")
-    password = data.get("password")
+@socketio.on('client_connect')
+def handle_client_connect(data):
+    client_id = data.get('client_id')
+    group = data.get('group')
+    if client_id:
+        clients[client_id] = {'status': 'online', 'group': group}
+        emit('update_clients', clients, broadcast=True)
 
-    # Kiểm tra nếu mật khẩu nhóm đúng (Giả lập)
-    if group_name not in machines:
-        machines[group_name] = {}
+@socketio.on('client_disconnect')
+def handle_client_disconnect(data):
+    client_id = data.get('client_id')
+    if client_id and client_id in clients:
+        clients.pop(client_id)
+        emit('update_clients', clients, broadcast=True)
 
-    machines[group_name][machine_name] = {"status": "online"}
-    socketio.emit('update', machines)  # Cập nhật danh sách máy khách
-
-    return jsonify({"success": True, "message": "Đăng ký thành công!"})
-
-@app.route('/control', methods=['POST'])
-def control():
-    data = request.json
-    machine_name = data.get("machine")
-    action = data.get("action")
-
-    # Tìm máy trong danh sách
-    for group in machines.values():
-        if machine_name in group:
-            if action == "shutdown":
-                group[machine_name]["status"] = "offline"
-            elif action == "restart":
-                group[machine_name]["status"] = "restarting"
-            
-            socketio.emit('update', machines)
-            return jsonify({"success": True, "message": f"{action} executed on {machine_name}"})
-
-    return jsonify({"success": False, "message": "Không tìm thấy máy"})
-
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    client_id = request.json.get('client_id')
+    emit('shutdown', {'client_id': client_id}, broadcast=True)
+    return jsonify({'message': 'Shutdown signal sent'})
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=10000)
