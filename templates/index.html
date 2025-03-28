@@ -2,127 +2,145 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Quản lý Máy tính</title>
-  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <title>Quản lý Máy Tính</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .group { display: inline-block; margin: 5px; padding: 10px; background: #ccc; cursor: pointer; }
-    table, th, td { border: 1px solid black; border-collapse: collapse; padding: 5px; }
-    .online { background-color: lightgreen; }
-    .offline { background-color: lightcoral; }
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    .group { display: inline-block; margin: 10px; padding: 10px; background: #fff; border: 1px solid #ccc; cursor: pointer; }
+    .client-online { background-color: #d4edda; }
+    .client-offline { background-color: #f8d7da; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    #groupForm, #renameForm { display: none; position: fixed; top: 30%; left: 40%; background: #fff; padding: 20px; border: 1px solid #000; }
   </style>
 </head>
 <body>
+  <h1>Danh sách Nhóm Máy</h1>
+  <button onclick="showGroupForm()">Tạo Nhóm Máy</button>
+  <div id="groups"></div>
 
-<h2>Danh sách Nhóm Máy</h2>
-<button onclick="showCreateGroup()">Tạo Nhóm Máy</button>
-<div id="groups"></div>
+  <table id="clientsTable" style="display:none;">
+    <thead>
+      <tr>
+        <th>Tên Máy</th>
+        <th>Reset</th>
+        <th>Tắt</th>
+        <th>Đổi tên</th>
+        <th>Xoá</th>
+      </tr>
+    </thead>
+    <tbody id="clientsBody"></tbody>
+  </table>
 
-<h2 id="groupTitle"></h2>
-<table id="clientTable" style="display:none;">
-  <thead>
-    <tr>
-      <th>Tên Máy</th>
-      <th>Reset</th>
-      <th>Tắt</th>
-      <th>Đổi Tên</th>
-      <th>Xoá</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+  <div id="groupForm">
+    <h3>Tạo Nhóm Máy</h3>
+    <input id="groupName" placeholder="Tên nhóm"><br><br>
+    <input id="groupPassword" placeholder="Mật khẩu nhóm"><br><br>
+    <button onclick="createGroup()">OK</button>
+    <button onclick="hideGroupForm()">Huỷ</button>
+  </div>
 
-<div id="createGroupModal" style="display:none;">
-  <h3>Tạo Nhóm Máy</h3>
-  <input id="groupName" placeholder="Tên nhóm"><br>
-  <input id="groupPassword" placeholder="Mật khẩu nhóm" type="password"><br>
-  <button onclick="createGroup()">OK</button>
-</div>
+  <div id="renameForm">
+    <h3>Đổi tên máy</h3>
+    <input id="newName" placeholder="Tên mới"><br><br>
+    <button onclick="confirmRename()">OK</button>
+    <button onclick="hideRenameForm()">Huỷ</button>
+  </div>
 
-<script>
-  const socket = io();
+  <script>
+    const socket = io();
+    let currentGroup = '';
+    let renameTarget = '';
 
-  function showCreateGroup() {
-    document.getElementById('createGroupModal').style.display = 'block';
-  }
-
-  function createGroup() {
-    const name = document.getElementById('groupName').value;
-    const password = document.getElementById('groupPassword').value;
-    fetch('/create_group', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name, password})
-    }).then(res => res.json()).then(data => {
-      if (data.status === 'success') location.reload();
-      else alert(data.message);
-    });
-  }
-
-  function loadClients(group) {
-    document.getElementById('groupTitle').innerText = group;
-    fetch('/get_clients/' + group)
-      .then(res => res.json())
-      .then(data => {
-        const tbody = document.querySelector('#clientTable tbody');
-        tbody.innerHTML = '';
-        data.forEach(c => {
-          const row = document.createElement('tr');
-          row.className = c.status === 'online' ? 'online' : 'offline';
-          row.innerHTML = `
-            <td>${c.name}</td>
-            <td><button onclick="sendAction('${group}','${c.name}','restart')">Reset</button></td>
-            <td><button onclick="sendAction('${group}','${c.name}','shutdown')">Tắt</button></td>
-            <td><button onclick="renameClient('${group}','${c.name}')">Đổi Tên</button></td>
-            <td><button onclick="sendAction('${group}','${c.name}','remove')">Xoá</button></td>
-          `;
-          tbody.appendChild(row);
-        });
-        document.getElementById('clientTable').style.display = 'block';
-      });
-  }
-
-  function sendAction(group, client, command) {
-    fetch('/action', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({group, client, command})
-    });
-  }
-
-  function renameClient(group, old_name) {
-    const new_name = prompt('Nhập tên mới:');
-    if (new_name) {
-      fetch('/rename', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({group, old_name, new_name})
-      }).then(() => loadClients(group));
+    function showGroupForm() {
+      document.getElementById('groupForm').style.display = 'block';
     }
-  }
 
-  function reload() {
-    location.reload();
-  }
+    function hideGroupForm() {
+      document.getElementById('groupForm').style.display = 'none';
+    }
 
-  socket.on('update', reload);
+    function showRenameForm(name) {
+      renameTarget = name;
+      document.getElementById('renameForm').style.display = 'block';
+    }
 
-  window.onload = () => {
-    fetch('/')
-      .then(res => res.text())
-      .then(html => {
-        const groups = {{ groups|tojson }};
+    function hideRenameForm() {
+      document.getElementById('renameForm').style.display = 'none';
+    }
+
+    function confirmRename() {
+      const newName = document.getElementById('newName').value;
+      socket.emit('control_command', { action: 'rename', group: currentGroup, client: renameTarget, new_name: newName });
+      hideRenameForm();
+    }
+
+    function createGroup() {
+      const name = document.getElementById('groupName').value;
+      const pass = document.getElementById('groupPassword').value;
+      fetch('/create_group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_name: name, password: pass })
+      }).then(() => {
+        hideGroupForm();
+        loadGroups();
+      });
+    }
+
+    function loadGroups() {
+      fetch('/get_groups').then(res => res.json()).then(data => {
         const container = document.getElementById('groups');
-        Object.keys(groups).forEach(name => {
+        container.innerHTML = '';
+        for (let group in data) {
           const div = document.createElement('div');
           div.className = 'group';
-          div.innerText = name;
-          div.onclick = () => loadClients(name);
+          div.innerText = group;
+          div.onclick = () => showClients(group);
           container.appendChild(div);
-        });
+        }
       });
-  }
-</script>
+    }
 
+    function showClients(group) {
+      currentGroup = group;
+      fetch('/get_groups').then(res => res.json()).then(data => {
+        const clients = data[group].clients;
+        const body = document.getElementById('clientsBody');
+        body.innerHTML = '';
+        clients.forEach(client => {
+          const row = document.createElement('tr');
+          row.className = client.status === 'online' ? 'client-online' : 'client-offline';
+          row.innerHTML = `
+            <td>${client.name}</td>
+            <td><button onclick="controlClient('${client.name}', 'reset')">Reset</button></td>
+            <td><button onclick="controlClient('${client.name}', 'shutdown')">Tắt</button></td>
+            <td><button onclick="showRenameForm('${client.name}')">Đổi tên</button></td>
+            <td><button onclick="removeClient('${client.name}')">Xoá</button></td>
+          `;
+          body.appendChild(row);
+        });
+        document.getElementById('clientsTable').style.display = 'table';
+      });
+    }
+
+    function controlClient(name, action) {
+      socket.emit('control_command', { action, group: currentGroup, client: name });
+    }
+
+    function removeClient(name) {
+      fetch('/remove_client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group: currentGroup, client: name })
+      }).then(() => showClients(currentGroup));
+    }
+
+    socket.on('client_list_updated', (data) => {
+      if (currentGroup) showClients(currentGroup);
+    });
+
+    loadGroups();
+  </script>
 </body>
 </html>
