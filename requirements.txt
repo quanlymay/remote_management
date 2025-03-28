@@ -1,5 +1,3 @@
-flask
-gunicorn
-flask-socketio
+Flask
+Flask-SocketIO
 eventlet
-requests
