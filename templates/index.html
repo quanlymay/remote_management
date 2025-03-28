@@ -1,26 +1,58 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Remote Management</title>
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <meta charset="UTF-8">
+    <title>Quản lý Máy Khách</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+    </style>
 </head>
 <body>
-  <h2>Danh sách Máy Khách</h2>
-  <ul id="clientList"></ul>
+    <h1>Danh sách Máy Khách</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Tên Máy</th>
+                <th>Nhóm</th>
+                <th>Trạng thái</th>
+                <th>Hành động</th>
+            </tr>
+        </thead>
+        <tbody id="client-list">
+        </tbody>
+    </table>
 
-  <script>
-    var socket = io();
+    <script>
+        const socket = io();
 
-    socket.on('update_clients', function (clients) {
-      var list = document.getElementById('clientList');
-      list.innerHTML = '';
-      for (var client in clients) {
-        var item = document.createElement('li');
-        item.innerHTML = client + ' - ' + clients[client].status + ' - Nhóm: ' + clients[client].group;
-        list.appendChild(item);
-      }
-    });
-  </script>
+        socket.on('connect', () => {
+            console.log('Kết nối tới server');
+        });
+
+        socket.on('update_clients', (clients) => {
+            const list = document.getElementById('client-list');
+            list.innerHTML = '';
+            for (const [clientId, info] of Object.entries(clients)) {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${clientId}</td>
+                    <td>${info.group}</td>
+                    <td>${info.status}</td>
+                    <td>
+                        <button onclick="sendCommand('${clientId}', 'shutdown')">Tắt máy</button>
+                        <button onclick="sendCommand('${clientId}', 'restart')">Khởi động lại</button>
+                    </td>
+                `;
+                list.appendChild(row);
+            }
+        });
+
+        function sendCommand(clientId, command) {
+            socket.emit('send_command', { client_id: clientId, command: command });
+        }
+    </script>
 </body>
 </html>
