@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ group.name }}</title>
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+  <h2>Nhóm: {{ group.name }}</h2>
+  <table border="1">
+    <tr>
+      <th>Tên máy</th>
+      <th>Trạng thái</th>
+      <th>Hành động</th>
+    </tr>
+    {% for client in clients %}
+    <tr style="background: {{ 'lightgreen' if client[2] == 'online' else 'lightcoral' }}">
+      <td>{{ client[1] }}</td>
+      <td>{{ client[2] }}</td>
+      <td>
+        <button onclick="clientAction('{{ client[0] }}', 'reset')">Reset</button>
+        <button onclick="clientAction('{{ client[0] }}', 'shutdown')">Tắt</button>
+        <button onclick="renameClient('{{ client[0] }}')">Đổi tên</button>
+        <button onclick="clientAction('{{ client[0] }}', 'delete')">Xóa</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+<script>
+var socket = io();
+
+socket.on('update_status', function(data){
+  if (data.group_id == {{ group.id }}) location.reload();
+});
+
+function clientAction(client_id, action) {
+  if (action == 'rename') return;
+  $.post('/client_action', JSON.stringify({client_id, action}), function(res){
+    if (res.success) location.reload();
+  }, 'json');
+}
+
+function renameClient(client_id) {
+  const new_name = prompt("Nhập tên mới:");
+  if (new_name) {
+    $.post('/client_action', JSON.stringify({client_id, action: 'rename', new_name}), function(res){
+      if (res.success) location.reload();
+    }, 'json');
+  }
+}
+</script>
+</body>
+</html>
