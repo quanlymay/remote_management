@@ -1,78 +1,122 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_socketio import SocketIO, emit
-import json
-import os
+import sqlite3
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-DATA_FILE = 'data.json'
+# ======= DATABASE SETUP =======
+def init_db():
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            group_id INTEGER,
+            status TEXT DEFAULT 'offline',
+            FOREIGN KEY(group_id) REFERENCES groups(id)
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# Load data
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {"groups": {}}
-    with open(DATA_FILE, 'r') as f:
-        return json.load(f)
+init_db()
 
-# Save data
-def save_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f)
-
-# Routes
+# ======= ROUTES =======
 @app.route('/')
 def index():
-    data = load_data()
-    return render_template('index.html', data=data)
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute('SELECT id, name FROM groups')
+    groups = c.fetchall()
+    conn.close()
+    return render_template('index.html', groups=groups)
 
 @app.route('/create_group', methods=['POST'])
 def create_group():
-    data = load_data()
-    group_name = request.form['group_name']
-    password = request.form['password']
-    if group_name not in data['groups']:
-        data['groups'][group_name] = {"password": password, "clients": {}}
-        save_data(data)
-        return jsonify({"status": "success"})
-    return jsonify({"status": "exists"})
+    data = request.json
+    name = data.get('name')
+    password = data.get('password')
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    try:
+        c.execute('INSERT INTO groups (name, password) VALUES (?, ?)', (name, password))
+        conn.commit()
+        return jsonify({'success': True})
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'message': 'Group name already exists'})
+    finally:
+        conn.close()
 
-@app.route('/get_groups', methods=['GET'])
-def get_groups():
-    data = load_data()
-    return jsonify(data['groups'])
+@app.route('/group/<int:group_id>')
+def view_group(group_id):
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute('SELECT name FROM groups WHERE id = ?', (group_id,))
+    group = c.fetchone()
+    if not group:
+        return 'Group not found', 404
+    c.execute('SELECT id, name, status FROM clients WHERE group_id = ?', (group_id,))
+    clients = c.fetchall()
+    conn.close()
+    return render_template('group.html', group={'id': group_id, 'name': group[0]}, clients=clients)
 
-@app.route('/get_clients/<group>', methods=['GET'])
-def get_clients(group):
-    data = load_data()
-    clients = data['groups'].get(group, {}).get('clients', {})
-    return jsonify(clients)
+@app.route('/client_action', methods=['POST'])
+def client_action():
+    data = request.json
+    client_id = data.get('client_id')
+    action = data.get('action')
+    if action not in ['reset', 'shutdown', 'rename', 'delete']:
+        return jsonify({'success': False, 'message': 'Invalid action'})
 
-@app.route('/update_client', methods=['POST'])
-def update_client():
-    data = load_data()
-    group = request.form['group']
-    client_id = request.form['client_id']
-    action = request.form['action']
-    if action == 'add':
-        name = request.form['name']
-        status = request.form['status']
-        data['groups'][group]['clients'][client_id] = {"name": name, "status": status}
-    elif action == 'remove':
-        data['groups'][group]['clients'].pop(client_id, None)
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+
+    if action == 'delete':
+        c.execute('DELETE FROM clients WHERE id = ?', (client_id,))
     elif action == 'rename':
-        new_name = request.form['new_name']
-        data['groups'][group]['clients'][client_id]['name'] = new_name
-    elif action == 'status':
-        status = request.form['status']
-        data['groups'][group]['clients'][client_id]['status'] = status
-    save_data(data)
-    return jsonify({"status": "success"})
+        new_name = data.get('new_name')
+        c.execute('UPDATE clients SET name = ? WHERE id = ?', (new_name, client_id,))
+    conn.commit()
+    conn.close()
 
-# SocketIO
-@socketio.on('command')
-def handle_command(data):
-    emit('command', data, broadcast=True)
+    socketio.emit('client_command', {'client_id': client_id, 'action': action})
+    return jsonify({'success': True})
+
+# ======= SOCKETIO =======
+@socketio.on('client_status')
+def handle_client_status(data):
+    client_name = data.get('name')
+    group_name = data.get('group')
+    status = data.get('status')
+
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute('SELECT id FROM groups WHERE name = ?', (group_name,))
+    group = c.fetchone()
+    if not group:
+        conn.close()
+        return
+
+    group_id = group[0]
+    c.execute('SELECT id FROM clients WHERE name = ? AND group_id = ?', (client_name, group_id))
+    client = c.fetchone()
+    if client:
+        c.execute('UPDATE clients SET status = ? WHERE id = ?', (status, client[0]))
+    else:
+        c.execute('INSERT INTO clients (name, group_id, status) VALUES (?, ?, ?)', (client_name, group_id, status))
+    conn.commit()
+    conn.close()
+
+    emit('update_status', {'group_id': group_id, 'client_name': client_name, 'status': status}, broadcast=True)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=10000)
